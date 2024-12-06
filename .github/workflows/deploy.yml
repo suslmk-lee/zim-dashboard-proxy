@@ -12,7 +12,7 @@ jobs:
     env:
       IMAGE_NAME: "zim-dashboard-proxy"
       REGISTRY: "44ce789b-kr1-registry.container.nhncloud.com/container-platform-registry"
-      NAMESPACE: "kafka"
+      NAMESPACE: "iot-edge"
       DEPLOYMENT_NAME: "zim-dashboard-proxy"
       CLUSTER_NAME: "nhn-NKS-host"
       KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
