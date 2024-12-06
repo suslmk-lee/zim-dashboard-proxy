@@ -1,0 +1,49 @@
+
+apiVersion: v1
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyI0NGNlNzg5Yi1rcjEtcmVnaXN0cnkuY29udGFpbmVyLm5obmNsb3VkLmNvbS9jb250YWluZXItcGxhdGZvcm0tcmVnaXN0cnkiOnsidXNlcm5hbWUiOiJYQ0ExT2owRnFBOE9NaGFsT1VoSyIsInBhc3N3b3JkIjoiekdneG83WGxwazVvalk3diIsImF1dGgiOiJXRU5CTVU5cU1FWnhRVGhQVFdoaGJFOVZhRXM2ZWtkbmVHODNXR3h3YXpWdmFsazNkZz09In19fQ==
+kind: Secret
+metadata:
+  name: ncr
+  namespace: iot-edge
+type: kubernetes.io/dockerconfigjson
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zim-dashboard-proxy
+  namespace: iot-edge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zim-dashboard-proxy-app
+  template:
+    metadata:
+      labels:
+        app: zim-dashboard-proxy-app
+    spec:
+      containers:
+        - name: zim-dashboard-proxy-container
+          image: 44ce789b-kr1-registry.container.nhncloud.com/container-platform-registry/zim-dashboard-proxy:latest
+          ports:
+            - containerPort: 8080
+      imagePullSecrets:
+        - name: ncr
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name:  zim-dashboard-proxy-service
+  namespace: iot-edge
+spec:
+  selector:
+    app: zim-dashboard-proxy-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+      nodePort: 32032
+  type: NodePort
