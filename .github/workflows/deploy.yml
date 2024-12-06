@@ -1,0 +1,54 @@
+name: Build and Deploy to Kubernetes
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: "zim-dashboard-proxy"
+      REGISTRY: "44ce789b-kr1-registry.container.nhncloud.com/container-platform-registry"
+      NAMESPACE: "kafka"
+      DEPLOYMENT_NAME: "zim-dashboard-proxy"
+      CLUSTER_NAME: "nhn-NKS-host"
+      KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.22
+
+      - name: Log in to Container Registry
+        env:
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: echo "${REGISTRY_PASSWORD}" | docker login $REGISTRY -u "${REGISTRY_USERNAME}" --password-stdin
+
+      - name: Build and Push Docker Image
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$IMAGE_NAME:latest .
+          docker push $REGISTRY/$IMAGE_NAME:latest
+
+      - name: Set up Kubernetes
+        uses: azure/k8s-set-context@v2
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG_DATA }}
+
+      - name: Apply Kubernetes Deployment
+        run: |
+          kubectl apply -f deployment/deploy.yml -n $NAMESPACE
+
+      - name: Restart Kubernetes Deployment
+        run: |
+          kubectl rollout restart deployment/$DEPLOYMENT_NAME -n $NAMESPACE
