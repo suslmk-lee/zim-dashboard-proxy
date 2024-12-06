@@ -1,4 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zim-dashboard-proxy-config
+data:
+  PROFILE: "prod"
+  BACKEND_API_URL: "http://zim-iot-data-api-service.iot-edge"
+  PORT: "8080"
 
+---
 apiVersion: v1
 data:
   .dockerconfigjson: eyJhdXRocyI6eyI0NGNlNzg5Yi1rcjEtcmVnaXN0cnkuY29udGFpbmVyLm5obmNsb3VkLmNvbS9jb250YWluZXItcGxhdGZvcm0tcmVnaXN0cnkiOnsidXNlcm5hbWUiOiJYQ0ExT2owRnFBOE9NaGFsT1VoSyIsInBhc3N3b3JkIjoiekdneG83WGxwazVvalk3diIsImF1dGgiOiJXRU5CTVU5cU1FWnhRVGhQVFdoaGJFOVZhRXM2ZWtkbmVHODNXR3h3YXpWdmFsazNkZz09In19fQ==
@@ -29,6 +38,15 @@ spec:
           image: 44ce789b-kr1-registry.container.nhncloud.com/container-platform-registry/zim-dashboard-proxy:latest
           ports:
             - containerPort: 8080
+          env:
+          - name: PROFILE
+            valueFrom:
+              configMapKeyRef:
+                name: zim-kafka-consumer-config
+                key: PROFILE
+          envFrom:
+          - configMapRef:
+              name: zim-dashboard-proxy-config
       imagePullSecrets:
         - name: ncr
 
@@ -45,5 +63,4 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 8080
-      nodePort: 32032
-  type: NodePort
+  type: LoadBalancer
