@@ -7,11 +7,12 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 )
 
-// getEnv는 환경 변수를 가져오고, 없으면 기본값을 반환합니다.
+// getEnv retrieves environment variables with a default fallback.
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
@@ -19,10 +20,10 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// LoggingMiddleware는 요청과 응답을 로깅하는 미들웨어입니다.
+// LoggingMiddleware logs incoming requests and outgoing responses.
 func LoggingMiddleware(logger *logrus.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 요청 로깅
+		// Log the incoming request
 		reqDump, err := httputil.DumpRequest(r, true)
 		if err != nil {
 			logger.WithError(err).Error("Failed to dump request")
@@ -30,43 +31,52 @@ func LoggingMiddleware(logger *logrus.Logger, next http.Handler) http.Handler {
 			logger.Infof("Incoming Request:\n%s", string(reqDump))
 		}
 
-		// 응답을 캡처하기 위해 ResponseWriter를 래핑
+		// Capture the response using a custom ResponseWriter
 		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK, body: &bytes.Buffer{}}
 
-		// 다음 핸들러 호출
+		// Process the request
 		next.ServeHTTP(lrw, r)
 
-		// 응답 로깅
+		// Log the outgoing response
 		respDump := lrw.body.String()
 		logger.Infof("Outgoing Response: Status %d, Body: %s", lrw.statusCode, respDump)
 	})
 }
 
-// loggingResponseWriter는 응답을 캡처하여 로깅하기 위한 구조체입니다.
+// loggingResponseWriter captures the status code and response body.
 type loggingResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
 	body       *bytes.Buffer
 }
 
+// WriteHeader captures the status code.
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.statusCode = code
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
+// Write captures the response body.
 func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
-	lrw.body.Write(b) // 응답 본문 캡처
+	lrw.body.Write(b)
 	return lrw.ResponseWriter.Write(b)
 }
 
 func main() {
-	// 로거 설정
+	// Initialize logger
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp: true,
 	})
 	logger.SetOutput(os.Stdout)
-	logger.SetLevel(logrus.InfoLevel)
+
+	logLevelStr := getEnv("LOG_LEVEL", "info")
+	logLevel, err := logrus.ParseLevel(strings.ToLower(logLevelStr))
+	if err != nil {
+		logger.Warnf("Invalid LOG_LEVEL '%s', defaulting to 'info'", logLevelStr)
+		logLevel = logrus.InfoLevel
+	}
+	logger.SetLevel(logLevel)
 
 	backendURLStr := getEnv("BACKEND_API_URL", "http://zim-iot-data-api-service.iot-edge")
 	backendURL, err := url.Parse(backendURLStr)
@@ -74,23 +84,43 @@ func main() {
 		logger.Fatalf("Failed to parse BACKEND_API_URL: %v", err)
 	}
 
+	// Set up reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(backendURL)
 
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		resp.Header.Del("Access-Control-Allow-Origin")
+		return nil
 	}
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, e error) {
-		logger.WithError(e).Error("Proxy error")
+		logger.WithError(e).Errorf("Proxy error: %s %s", req.Method, req.URL.Path)
 		http.Error(w, "Proxy error", http.StatusBadGateway)
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://133.186.135.247")
+		origin := r.Header.Get("Origin")
+		allowedOrigins := []string{
+			"http://133.186.135.247",
+		}
+
+		isAllowed := false
+		for _, o := range allowedOrigins {
+			if o == origin {
+				isAllowed = true
+				break
+			}
+		}
+
+		if isAllowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			http.Error(w, "CORS origin denied", http.StatusForbidden)
+			return
+		}
+
+		// Set other CORS headers
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if r.Method == http.MethodOptions {
@@ -109,7 +139,7 @@ func main() {
 	})
 
 	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-		// 여기에서 준비 상태를 확인할 수 있는 로직 추가 가능
+		// Add readiness logic if needed
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Ready"))
 	})
@@ -118,7 +148,6 @@ func main() {
 
 	port := getEnv("PORT", "8080")
 	logger.Infof("Starting proxy server on port %s, forwarding to %s", port, backendURLStr)
-
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		logger.Fatalf("Failed to start server: %v", err)
 	}
