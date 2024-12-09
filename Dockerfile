@@ -21,6 +21,4 @@ FROM scratch
 
 COPY --from=builder /dist/main .
 
-COPY --from=builder /dist/*.properties .
-
 ENTRYPOINT ["/main"]
