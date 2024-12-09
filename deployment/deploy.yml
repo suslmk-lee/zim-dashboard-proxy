@@ -42,25 +42,10 @@ spec:
           - name: PROFILE
             valueFrom:
               configMapKeyRef:
-                name: zim-kafka-consumer-config
+                name: zim-dashboard-proxy-config
                 key: PROFILE
           envFrom:
           - configMapRef:
               name: zim-dashboard-proxy-config
       imagePullSecrets:
         - name: ncr
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name:  zim-dashboard-proxy-service
-  namespace: iot-edge
-spec:
-  selector:
-    app: zim-dashboard-proxy-app
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 8080
-  type: LoadBalancer
